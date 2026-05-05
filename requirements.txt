@@ -8,7 +8,10 @@ torch
 ta
 feedparser
 plotly
+streamlit
 transformers
 scikit-learn
 tqdm
 tensorboard
+alpaca-py
+schedule
