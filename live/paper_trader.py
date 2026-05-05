@@ -1,5 +1,7 @@
 import sys
-sys.path.insert(0, '/Users/anshvardhansingh/Desktop/trading_agent')
+import os
+sys.path.insert(0, '/app')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
@@ -9,7 +11,6 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import json
-import os
 from datetime import datetime
 from stable_baselines3 import PPO
 from features.technical import add_indicators
@@ -17,12 +18,15 @@ from features.sentiment import synthetic_sentiment
 from env.trading_env import TradingEnv
 from config import *
 
-API_KEY    = os.getenv("ALPACA_API_KEY", "PK7UKSFFY2CHFHZH57VXUIAJYQ")
-SECRET_KEY = os.getenv("ALPACA_SECRET_KEY", "6WeB4vYmnortNngJJU3H1gfdhiQAN47CzantSx1FcUQk")
-LOG_FILE   = "live/trade_log.json"
+API_KEY    = os.getenv("ALPACA_API_KEY", "YOUR_KEY")
+SECRET_KEY = os.getenv("ALPACA_SECRET_KEY", "YOUR_SECRET")
+LOG_FILE   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trade_log.json")
 
 client = TradingClient(API_KEY, SECRET_KEY, paper=True)
-model  = PPO.load("models/best_model")
+
+# Load model
+base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+model = PPO.load(os.path.join(base, "models", "best_model"))
 print("✅ Model loaded")
 
 def load_log():
@@ -43,6 +47,7 @@ def get_latest_data(ticker=TICKER, days=80):
     df['Close']  = df['Close'].astype(float)
     df['Volume'] = df['Volume'].astype(float)
     df = add_indicators(df)
+    # Use synthetic sentiment only — no FinBERT (saves RAM)
     df['sentiment'] = synthetic_sentiment(df).values
     df.dropna(inplace=True)
     return df
@@ -55,12 +60,10 @@ def get_position(ticker=TICKER):
         return 0
 
 def get_cash():
-    account = client.get_account()
-    return float(account.cash)
+    return float(client.get_account().cash)
 
 def get_portfolio_value():
-    account = client.get_account()
-    return float(account.portfolio_value)
+    return float(client.get_account().portfolio_value)
 
 def get_agent_action(df):
     env = TradingEnv(df, WINDOW_SIZE, INITIAL_BALANCE)
@@ -73,8 +76,7 @@ def get_agent_action(df):
     return int(np.squeeze(action))
 
 def is_market_open():
-    clock = client.get_clock()
-    return clock.is_open
+    return client.get_clock().is_open
 
 def run():
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -116,7 +118,7 @@ def run():
 
     order_placed = False
 
-    if action == 1 and shares_held == 0:  # BUY
+    if action == 1 and shares_held == 0:
         qty = int(cash * 0.95 / price)
         if qty > 0:
             order = MarketOrderRequest(
@@ -136,7 +138,7 @@ def run():
             })
             order_placed = True
 
-    elif action == 2 and shares_held > 0:  # SELL
+    elif action == 2 and shares_held > 0:
         order = MarketOrderRequest(
             symbol=TICKER,
             qty=shares_held,
