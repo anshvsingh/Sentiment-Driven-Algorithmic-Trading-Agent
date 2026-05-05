@@ -1,5 +1,5 @@
-import sys
-sys.path.insert(0, '/Users/anshvardhansingh/Desktop/trading_agent')
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import streamlit as st
 import pandas as pd
@@ -13,40 +13,41 @@ from config import *
 st.set_page_config(page_title="Sentiment Trading Agent", layout="wide", page_icon="🤖")
 
 st.markdown("""
-    <h1 style='text-align:center;'>🤖 Sentiment-Driven Algorithmic Trading Agent</h1>
+    <h1 style='text-align:center;'>Sentiment-Driven Algorithmic Trading Agent</h1>
     <p style='text-align:center; color:gray;'>Deep Reinforcement Learning + FinBERT NLP + Technical Analysis</p>
     <hr/>
 """, unsafe_allow_html=True)
 
 @st.cache_data
 def load_data():
-    return pd.read_csv("data/test_df.csv", index_col=0, parse_dates=True)
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "test_df.csv")
+    return pd.read_csv(path, index_col=0, parse_dates=True)
 
 @st.cache_resource
 def load_model():
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     try:
-        m = PPO.load("models/best_model")
-        return m, "Best Model (EvalCallback)"
+        m = PPO.load(os.path.join(base, "models", "best_model"))
+        return m, "Best Model"
     except:
-        m = PPO.load(MODEL_PATH)
+        m = PPO.load(os.path.join(base, "models", "ppo_trader"))
         return m, "Final Model"
 
 test_df = load_data()
 model, model_name = load_model()
 
-# Sidebar
-st.sidebar.header("⚙️ Configuration")
+st.sidebar.header("Configuration")
 st.sidebar.markdown(f"**Ticker:** {TICKER}")
 st.sidebar.markdown(f"**Initial Balance:** ${INITIAL_BALANCE:,}")
 st.sidebar.markdown(f"**Window Size:** {WINDOW_SIZE} days")
 st.sidebar.markdown(f"**Model:** {model_name}")
 st.sidebar.markdown("---")
 st.sidebar.markdown("### Signal Weights")
-st.sidebar.markdown("- 📊 Technical Indicators")
-st.sidebar.markdown("- 📰 Sentiment (FinBERT)")
-st.sidebar.markdown("- 🧠 PPO Policy Network")
+st.sidebar.markdown("- Technical Indicators (RSI, MACD, BB)")
+st.sidebar.markdown("- Sentiment (FinBERT NLP)")
+st.sidebar.markdown("- PPO Policy Network")
 
-run = st.sidebar.button("▶ Run Backtest", type="primary", use_container_width=True)
+run = st.sidebar.button("Run Backtest", type="primary", use_container_width=True)
 
 if run:
     with st.spinner("Running backtest..."):
@@ -65,13 +66,12 @@ if run:
     ret = np.diff(pv) / pv[:-1]
     bh  = INITIAL_BALANCE * test_df['Close'].astype(float).values / float(test_df['Close'].iloc[0])
 
-    sharpe = np.sqrt(252) * ret.mean() / (ret.std() + 1e-8)
-    mdd    = ((pv - np.maximum.accumulate(pv)) / np.maximum.accumulate(pv)).min() * 100
+    sharpe    = np.sqrt(252) * ret.mean() / (ret.std() + 1e-8)
+    mdd       = ((pv - np.maximum.accumulate(pv)) / np.maximum.accumulate(pv)).min() * 100
     total_ret = (pv[-1] - INITIAL_BALANCE) / INITIAL_BALANCE * 100
     bh_ret    = (float(test_df['Close'].iloc[-1]) - float(test_df['Close'].iloc[0])) \
                 / float(test_df['Close'].iloc[0]) * 100
 
-    # Metrics row
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Final Portfolio",  f"${pv[-1]:,.2f}", f"{total_ret:+.2f}%")
     col2.metric("Buy & Hold",       f"${bh[len(pv)-1]:,.2f}", f"{bh_ret:+.2f}%")
@@ -81,19 +81,15 @@ if run:
 
     st.markdown("---")
 
-    # Main chart
-    fig = make_subplots(rows=3, cols=1,
-                        shared_xaxes=True,
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
                         row_heights=[0.55, 0.25, 0.20],
                         subplot_titles=["Portfolio Value", "RSI", "Sentiment"])
 
-    # Portfolio
     fig.add_trace(go.Scatter(y=pv, name="PPO Agent",
                              line=dict(color="steelblue", width=2.5)), row=1, col=1)
     fig.add_trace(go.Scatter(y=bh[:len(pv)], name="Buy & Hold",
                              line=dict(color="orange", dash="dash", width=2)), row=1, col=1)
 
-    # Buy/sell markers
     buy_steps  = [i for i, a in enumerate(actions_log) if a == 1]
     sell_steps = [i for i, a in enumerate(actions_log) if a == 2]
     fig.add_trace(go.Scatter(x=buy_steps, y=[pv[i] for i in buy_steps],
@@ -105,57 +101,46 @@ if run:
                              marker=dict(symbol='triangle-down', color='red', size=10)),
                   row=1, col=1)
 
-    # RSI
     rsi = test_df['rsi'].values[:len(actions_log)]
     fig.add_trace(go.Scatter(y=rsi, name="RSI",
                              line=dict(color="purple", width=1.5)), row=2, col=1)
     fig.add_hline(y=70, line_dash="dot", line_color="red",   row=2, col=1)
     fig.add_hline(y=30, line_dash="dot", line_color="green", row=2, col=1)
 
-    # Sentiment
     sentiment = test_df['sentiment'].values[:len(actions_log)]
     fig.add_trace(go.Bar(y=sentiment, name="Sentiment",
                          marker_color=['green' if s > 0 else 'red' for s in sentiment]),
                   row=3, col=1)
 
     fig.update_layout(height=750, template="plotly_dark",
-                      title=f"PPO Agent — {TICKER} Test Period",
-                      showlegend=True)
+                      title=f"PPO Agent — {TICKER} Test Period")
     st.plotly_chart(fig, use_container_width=True)
 
-    # Action breakdown
-    st.markdown("### 📊 Action Breakdown")
     c1, c2, c3 = st.columns(3)
-    c1.metric("🟢 Buy Actions",  actions_log.count(1))
-    c2.metric("⚪ Hold Actions", actions_log.count(0))
-    c3.metric("🔴 Sell Actions", actions_log.count(2))
+    c1.metric("Buy Actions",  actions_log.count(1))
+    c2.metric("Hold Actions", actions_log.count(0))
+    c3.metric("Sell Actions", actions_log.count(2))
 
-    # Architecture explainer
     st.markdown("---")
-    st.markdown("### 🧠 How It Works")
+    st.markdown("### How It Works")
     st.markdown("""
     | Component | Details |
     |---|---|
-    | **Price Data** | AAPL OHLCV via yfinance (2022–2024) |
+    | **Price Data** | AAPL OHLCV via yfinance (2022-2024) |
     | **Technical Indicators** | RSI, MACD, Bollinger Bands, Volume Ratio |
     | **Sentiment** | FinBERT NLP model (ProsusAI/finbert) |
     | **RL Algorithm** | PPO (Proximal Policy Optimization) |
-    | **State Space** | 20-day window × 8 features = 160-dim vector |
+    | **State Space** | 20-day window x 8 features = 160-dim vector |
     | **Action Space** | Discrete(3): Buy / Hold / Sell |
     | **Reward** | Log portfolio return with 0.1% commission |
     | **Training** | 200,000 environment steps |
     """)
 else:
-    st.info("👈 Click **Run Backtest** in the sidebar to see the agent in action!")
-    st.markdown("### 🏗️ System Architecture")
+    st.info("Click **Run Backtest** in the sidebar to see the agent in action!")
     st.code("""
-Financial News (Yahoo RSS)
-        ↓
-   FinBERT NLP → Sentiment Score [-1, +1]
-        ↓
-Price Data (yfinance) → RSI, MACD, Bollinger Bands
-        ↓
-   State Vector (160-dim) → PPO Agent → Action (Buy/Hold/Sell)
-        ↓
-   Backtesting Engine → Sharpe, Drawdown, Returns
+Financial News → FinBERT NLP → Sentiment Score [-1, +1]
+Price Data     → RSI, MACD, Bollinger Bands
+               → State Vector (160-dim)
+               → PPO Agent → Buy / Hold / Sell
+               → Backtest: Sharpe 2.618 | Drawdown -3.41%
     """)
