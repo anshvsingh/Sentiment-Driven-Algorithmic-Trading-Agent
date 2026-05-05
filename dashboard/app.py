@@ -33,7 +33,7 @@ def load_data():
     df['sentiment'] = synthetic_sentiment(df).values
     df.dropna(inplace=True)
     split = int(len(df) * TRAIN_SPLIT)
-    return df.iloc[split:].copy()
+    return df.iloc[split:].copy().reset_index(drop=True)
 
 @st.cache_resource
 def load_model():
@@ -73,14 +73,19 @@ if run:
     with st.spinner("Running backtest..."):
         env = TradingEnv(test_df, WINDOW_SIZE, INITIAL_BALANCE)
         obs, _ = env.reset()
+
         portfolio_values = [INITIAL_BALANCE]
         actions_log = []
         done = False
+
         while not done:
-            action, _ = model.predict(obs, deterministic=True)
+            # Ensure obs is correctly shaped
+            obs_input = np.array(obs).reshape(1, -1)
+            action, _ = model.predict(obs_input, deterministic=True)
+            action = int(action)
             obs, _, done, _, info = env.step(action)
             portfolio_values.append(info['net_worth'])
-            actions_log.append(int(action))
+            actions_log.append(action)
 
     pv  = np.array(portfolio_values)
     ret = np.diff(pv) / pv[:-1]
