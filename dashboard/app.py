@@ -40,10 +40,10 @@ def load_model():
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     try:
         m = PPO.load(os.path.join(base, "models", "best_model"))
-        return m, "Best Model"
+        return m, "V2 Best Model (1M steps, 6yr data)"
     except:
-        m = PPO.load(os.path.join(base, "models", "ppo_trader"))
-        return m, "Final Model"
+        m = PPO.load(os.path.join(base, "models", "ppo_trader_v2"))
+        return m, "V2 Final Model"
 
 with st.spinner("Loading data and model..."):
     test_df = load_data()
@@ -59,6 +59,13 @@ st.sidebar.markdown("### Signals Used")
 st.sidebar.markdown("- Technical Indicators (RSI, MACD, BB)")
 st.sidebar.markdown("- Sentiment (FinBERT NLP)")
 st.sidebar.markdown("- PPO Policy Network")
+st.sidebar.markdown("---")
+st.sidebar.markdown("### V1 vs V2")
+st.sidebar.markdown("| Metric | V1 | V2 |")
+st.sidebar.markdown("|---|---|---|")
+st.sidebar.markdown("| Return | 8.90% | **55.73%** |")
+st.sidebar.markdown("| Sharpe | 2.618 | **4.300** |")
+st.sidebar.markdown("| Drawdown | -3.41% | **-3.75%** |")
 
 run = st.sidebar.button("Run Backtest", type="primary", use_container_width=True)
 
@@ -88,7 +95,7 @@ if run:
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Final Portfolio", f"${pv[-1]:,.2f}", f"{total_ret:+.2f}%")
     col2.metric("Buy & Hold",      f"${bh[len(pv)-1]:,.2f}", f"{bh_ret:+.2f}%")
-    col3.metric("Sharpe Ratio",    f"{sharpe:.3f}")
+    col3.metric("Sharpe Ratio",    f"{sharpe:.3f}", "↑ vs 2.618 V1")
     col4.metric("Max Drawdown",    f"{mdd:.2f}%")
     col5.metric("Total Trades",    sum(1 for a in actions_log if a != 0))
 
@@ -98,7 +105,7 @@ if run:
                         row_heights=[0.55, 0.25, 0.20],
                         subplot_titles=["Portfolio Value", "RSI", "Sentiment"])
 
-    fig.add_trace(go.Scatter(y=pv, name="PPO Agent",
+    fig.add_trace(go.Scatter(y=pv, name="PPO Agent V2",
                              line=dict(color="steelblue", width=2.5)), row=1, col=1)
     fig.add_trace(go.Scatter(y=bh[:len(pv)], name="Buy & Hold",
                              line=dict(color="orange", dash="dash", width=2)), row=1, col=1)
@@ -126,7 +133,7 @@ if run:
                   row=3, col=1)
 
     fig.update_layout(height=750, template="plotly_dark",
-                      title=f"PPO Agent — {TICKER} Test Period")
+                      title=f"PPO Agent V2 — {TICKER} | Sharpe: {sharpe:.3f} | Return: {total_ret:.2f}%")
     st.plotly_chart(fig, use_container_width=True)
 
     c1, c2, c3 = st.columns(3)
@@ -139,21 +146,41 @@ if run:
     st.markdown("""
     | Component | Details |
     |---|---|
-    | **Price Data** | AAPL OHLCV via yfinance (2022-2024) |
+    | **Price Data** | AAPL OHLCV via yfinance (2018-2024) |
     | **Technical Indicators** | RSI, MACD, Bollinger Bands, Volume Ratio |
     | **Sentiment** | FinBERT NLP model (ProsusAI/finbert) |
     | **RL Algorithm** | PPO (Proximal Policy Optimization) |
     | **State Space** | 20-day window x 8 features = 160-dim vector |
     | **Action Space** | Discrete(3): Buy / Hold / Sell |
     | **Reward** | Log portfolio return with 0.1% commission |
-    | **Training** | 200,000 environment steps |
+    | **Training** | 1,000,000 environment steps over 6 years of data |
+    """)
+
+    st.markdown("### V1 vs V2 Comparison")
+    st.markdown("""
+    | Metric | V1 (200K steps) | V2 (1M steps) |
+    |---|---|---|
+    | Agent Return | 8.90% | **55.73%** |
+    | Sharpe Ratio | 2.618 | **4.300** |
+    | Max Drawdown | -3.41% | -3.75% |
+    | Training Data | 2 years | **6 years** |
+    | Training Steps | 200,000 | **1,000,000** |
     """)
 else:
-    st.info("Click **Run Backtest** in the sidebar to see the agent in action!")
+    st.info("Click **Run Backtest** in the sidebar to see the V2 agent in action!")
+    st.markdown("### V2 Improvements")
+    st.markdown("""
+    | Metric | V1 | V2 |
+    |---|---|---|
+    | Agent Return | 8.90% | **55.73%** |
+    | Sharpe Ratio | 2.618 | **4.300** |
+    | Training Steps | 200,000 | **1,000,000** |
+    | Training Data | 2 years | **6 years** |
+    """)
     st.code("""
 Financial News -> FinBERT NLP -> Sentiment Score [-1, +1]
 Price Data     -> RSI, MACD, Bollinger Bands
                -> State Vector (160-dim)
-               -> PPO Agent -> Buy / Hold / Sell
-               -> Backtest: Sharpe 2.618 | Drawdown -3.41%
+               -> PPO Agent V2 -> Buy / Hold / Sell
+               -> Backtest: Sharpe 4.300 | Return 55.73%
     """)
