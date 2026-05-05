@@ -82,7 +82,7 @@ if run:
             # Ensure obs is correctly shaped
             obs_input = np.array(obs).reshape(1, -1)
             action, _ = model.predict(obs_input, deterministic=True)
-            action = int(action)
+            action = int(np.squeeze(action))
             obs, _, done, _, info = env.step(action)
             portfolio_values.append(info['net_worth'])
             actions_log.append(action)
