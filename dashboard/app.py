@@ -8,6 +8,9 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from stable_baselines3 import PPO
 from env.trading_env import TradingEnv
+from features.technical import add_indicators
+from features.sentiment import synthetic_sentiment
+import yfinance as yf
 from config import *
 
 st.set_page_config(page_title="Sentiment Trading Agent", layout="wide", page_icon="🤖")
@@ -20,8 +23,17 @@ st.markdown("""
 
 @st.cache_data
 def load_data():
-    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "test_df.csv")
-    return pd.read_csv(path, index_col=0, parse_dates=True)
+    df = yf.download(TICKER, start=START_DATE, end=END_DATE, auto_adjust=True)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df = df[pd.to_numeric(df['Close'], errors='coerce').notna()].iloc[1:]
+    df['Close']  = df['Close'].astype(float)
+    df['Volume'] = df['Volume'].astype(float)
+    df = add_indicators(df)
+    df['sentiment'] = synthetic_sentiment(df).values
+    df.dropna(inplace=True)
+    split = int(len(df) * TRAIN_SPLIT)
+    return df.iloc[split:].copy()
 
 @st.cache_resource
 def load_model():
@@ -33,8 +45,9 @@ def load_model():
         m = PPO.load(os.path.join(base, "models", "ppo_trader"))
         return m, "Final Model"
 
-test_df = load_data()
-model, model_name = load_model()
+with st.spinner("Loading data and model..."):
+    test_df = load_data()
+    model, model_name = load_model()
 
 st.sidebar.header("Configuration")
 st.sidebar.markdown(f"**Ticker:** {TICKER}")
@@ -42,7 +55,7 @@ st.sidebar.markdown(f"**Initial Balance:** ${INITIAL_BALANCE:,}")
 st.sidebar.markdown(f"**Window Size:** {WINDOW_SIZE} days")
 st.sidebar.markdown(f"**Model:** {model_name}")
 st.sidebar.markdown("---")
-st.sidebar.markdown("### Signal Weights")
+st.sidebar.markdown("### Signals Used")
 st.sidebar.markdown("- Technical Indicators (RSI, MACD, BB)")
 st.sidebar.markdown("- Sentiment (FinBERT NLP)")
 st.sidebar.markdown("- PPO Policy Network")
@@ -73,11 +86,11 @@ if run:
                 / float(test_df['Close'].iloc[0]) * 100
 
     col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Final Portfolio",  f"${pv[-1]:,.2f}", f"{total_ret:+.2f}%")
-    col2.metric("Buy & Hold",       f"${bh[len(pv)-1]:,.2f}", f"{bh_ret:+.2f}%")
-    col3.metric("Sharpe Ratio",     f"{sharpe:.3f}")
-    col4.metric("Max Drawdown",     f"{mdd:.2f}%")
-    col5.metric("Total Trades",     sum(1 for a in actions_log if a != 0))
+    col1.metric("Final Portfolio", f"${pv[-1]:,.2f}", f"{total_ret:+.2f}%")
+    col2.metric("Buy & Hold",      f"${bh[len(pv)-1]:,.2f}", f"{bh_ret:+.2f}%")
+    col3.metric("Sharpe Ratio",    f"{sharpe:.3f}")
+    col4.metric("Max Drawdown",    f"{mdd:.2f}%")
+    col5.metric("Total Trades",    sum(1 for a in actions_log if a != 0))
 
     st.markdown("---")
 
@@ -138,9 +151,9 @@ if run:
 else:
     st.info("Click **Run Backtest** in the sidebar to see the agent in action!")
     st.code("""
-Financial News → FinBERT NLP → Sentiment Score [-1, +1]
-Price Data     → RSI, MACD, Bollinger Bands
-               → State Vector (160-dim)
-               → PPO Agent → Buy / Hold / Sell
-               → Backtest: Sharpe 2.618 | Drawdown -3.41%
+Financial News -> FinBERT NLP -> Sentiment Score [-1, +1]
+Price Data     -> RSI, MACD, Bollinger Bands
+               -> State Vector (160-dim)
+               -> PPO Agent -> Buy / Hold / Sell
+               -> Backtest: Sharpe 2.618 | Drawdown -3.41%
     """)
