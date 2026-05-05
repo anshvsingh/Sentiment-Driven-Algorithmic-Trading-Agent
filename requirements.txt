@@ -1,0 +1,14 @@
+yfinance
+pandas
+numpy
+matplotlib
+gymnasium
+stable-baselines3
+torch
+ta
+feedparser
+plotly
+transformers
+scikit-learn
+tqdm
+tensorboard
