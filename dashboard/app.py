@@ -5,6 +5,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import json
+import requests
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from stable_baselines3 import PPO
@@ -21,6 +22,8 @@ st.markdown("""
     <p style='text-align:center; color:gray;'>Deep Reinforcement Learning + FinBERT NLP + Technical Analysis</p>
     <hr/>
 """, unsafe_allow_html=True)
+
+GITHUB_RAW = "https://raw.githubusercontent.com/anshvsingh/Sentiment-Driven-Algorithmic-Trading-Agent/main/live/trade_log.json"
 
 @st.cache_data
 def load_data():
@@ -47,13 +50,12 @@ def load_model():
         return m, "V2 Final Model"
 
 def load_trade_log():
-    log_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "live", "trade_log.json"
-    )
-    if os.path.exists(log_path):
-        with open(log_path, "r") as f:
-            return json.load(f)
+    try:
+        r = requests.get(GITHUB_RAW, timeout=5)
+        if r.status_code == 200:
+            return r.json()
+    except:
+        pass
     return {"trades": [], "portfolio_history": []}
 
 with st.spinner("Loading data and model..."):
@@ -79,7 +81,6 @@ st.sidebar.markdown("| Return | 8.90% | **55.73%** |")
 st.sidebar.markdown("| Sharpe | 2.618 | **4.300** |")
 st.sidebar.markdown("| Drawdown | -3.41% | **-3.75%** |")
 
-# Tabs
 tab1, tab2 = st.tabs(["📊 Backtest", "🔴 Live Paper Trading"])
 
 # ── TAB 1: BACKTEST ─────────────────────────────────
@@ -182,6 +183,16 @@ with tab1:
         | **Reward** | Log portfolio return with 0.1% commission |
         | **Training** | 1,000,000 steps over 6 years of data |
         """)
+
+        st.markdown("### V1 vs V2")
+        st.markdown("""
+        | Metric | V1 (200K steps) | V2 (1M steps) |
+        |---|---|---|
+        | Agent Return | 8.90% | **55.73%** |
+        | Sharpe Ratio | 2.618 | **4.300** |
+        | Max Drawdown | -3.41% | -3.75% |
+        | Training Data | 2 years | **6 years** |
+        """)
     else:
         st.info("Click **Run Backtest** to see the agent in action!")
         st.code("""
@@ -198,24 +209,26 @@ with tab2:
     st.markdown("Trades execute daily at **7:00 PM IST** (9:30 AM EST) via Alpaca Paper Trading")
     st.markdown("---")
 
+    if st.button("🔄 Refresh", key="refresh"):
+        st.cache_data.clear()
+
     log = load_trade_log()
 
     if not log["portfolio_history"]:
         st.info("No live trades yet. The agent runs daily at market open (7 PM IST). Check back after the first trading session!")
         st.markdown("""
         ### How Paper Trading Works
-        1. Every weekday at 7 PM IST, the scheduler runs automatically
-        2. The agent fetches latest AAPL data
-        3. It decides: Buy / Hold / Sell
-        4. Order is placed on Alpaca Paper Trading (fake money, real market)
-        5. Results appear here in real time
+        1. Every weekday at 7 PM IST, Railway cloud server triggers the agent
+        2. Agent fetches latest AAPL data
+        3. Decides: Buy / Hold / Sell
+        4. Order placed on Alpaca Paper Trading (fake money, real market)
+        5. Trade log pushed to GitHub
+        6. Results appear here automatically
         """)
     else:
-        # Portfolio history chart
         history = pd.DataFrame(log["portfolio_history"])
         history["timestamp"] = pd.to_datetime(history["timestamp"])
 
-        # Key metrics
         initial = log["portfolio_history"][0]["portfolio_value"]
         latest  = log["portfolio_history"][-1]["portfolio_value"]
         ret     = (latest - initial) / initial * 100
@@ -224,12 +237,10 @@ with tab2:
         col1.metric("Current Portfolio", f"${latest:,.2f}", f"{ret:+.2f}%")
         col2.metric("Starting Value",    f"${initial:,.2f}")
         col3.metric("Total Trades",      len(log["trades"]))
-        col4.metric("Last Action",
-                    log["portfolio_history"][-1]["action"])
+        col4.metric("Last Action",       log["portfolio_history"][-1]["action"])
 
         st.markdown("---")
 
-        # Portfolio value over time
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=history["timestamp"],
@@ -240,7 +251,6 @@ with tab2:
             fillcolor='rgba(70,130,180,0.1)'
         ))
 
-        # Mark trades
         if log["trades"]:
             trades_df = pd.DataFrame(log["trades"])
             trades_df["timestamp"] = pd.to_datetime(trades_df["timestamp"])
@@ -249,29 +259,24 @@ with tab2:
 
             if not buys.empty:
                 fig.add_trace(go.Scatter(
-                    x=buys["timestamp"],
-                    y=buys["portfolio_value"],
+                    x=buys["timestamp"], y=buys["portfolio_value"],
                     mode='markers', name='BUY',
                     marker=dict(symbol='triangle-up', color='green', size=14)
                 ))
             if not sells.empty:
                 fig.add_trace(go.Scatter(
-                    x=sells["timestamp"],
-                    y=sells["portfolio_value"],
+                    x=sells["timestamp"], y=sells["portfolio_value"],
                     mode='markers', name='SELL',
                     marker=dict(symbol='triangle-down', color='red', size=14)
                 ))
 
         fig.update_layout(
             title="Live Paper Portfolio — AAPL",
-            template="plotly_dark",
-            height=400,
-            xaxis_title="Date",
-            yaxis_title="Portfolio Value ($)"
+            template="plotly_dark", height=400,
+            xaxis_title="Date", yaxis_title="Portfolio Value ($)"
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # Trade log table
         st.markdown("### 📋 Trade History")
         if log["trades"]:
             trades_df = pd.DataFrame(log["trades"])
@@ -280,9 +285,8 @@ with tab2:
             trades_df.columns = ["Time", "Action", "Shares", "Price", "Portfolio Value"]
             st.dataframe(trades_df, use_container_width=True)
         else:
-            st.info("No buy/sell orders placed yet — agent has been holding.")
+            st.info("No buy/sell orders yet — agent has been holding.")
 
-        # Daily log table
         st.markdown("### 📅 Daily Agent Decisions")
         display = history[["timestamp", "action", "price",
                            "portfolio_value", "cash", "shares"]].copy()
