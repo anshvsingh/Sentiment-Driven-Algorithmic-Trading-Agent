@@ -11,6 +11,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import json
+import subprocess
 from datetime import datetime
 from stable_baselines3 import PPO
 from features.technical import add_indicators
@@ -18,15 +19,15 @@ from features.sentiment import synthetic_sentiment
 from env.trading_env import TradingEnv
 from config import *
 
-API_KEY    = os.getenv("ALPACA_API_KEY", "YOUR_KEY")
-SECRET_KEY = os.getenv("ALPACA_SECRET_KEY", "YOUR_SECRET")
-LOG_FILE   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trade_log.json")
+API_KEY    = os.getenv("ALPACA_API_KEY","PK7UKSFFY2CHFHZH57VXUIAJYQ")
+SECRET_KEY = os.getenv("ALPACA_SECRET_KEY","6WeB4vYmnortNngJJU3H1gfdhiQAN47CzantSx1FcUQk")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+REPO = "anshvsingh/Sentiment-Driven-Algorithmic-Trading-Agent"
+LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trade_log.json")
 
 client = TradingClient(API_KEY, SECRET_KEY, paper=True)
-
-# Load model
-base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-model = PPO.load(os.path.join(base, "models", "best_model"))
+base   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+model  = PPO.load(os.path.join(base, "models", "best_model"))
 print("✅ Model loaded")
 
 def load_log():
@@ -39,6 +40,39 @@ def save_log(log):
     with open(LOG_FILE, "w") as f:
         json.dump(log, f, indent=2)
 
+def push_log_to_github():
+    """Push trade_log.json to GitHub so Streamlit can read it"""
+    try:
+        import base64
+        import requests
+
+        with open(LOG_FILE, "r") as f:
+            content = f.read()
+
+        encoded = base64.b64encode(content.encode()).decode()
+
+        # Get current SHA
+        url = f"https://api.github.com/repos/{REPO}/contents/live/trade_log.json"
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Content-Type": "application/json"
+        }
+
+        r = requests.get(url, headers=headers)
+        sha = r.json().get("sha", "")
+
+        # Update file
+        payload = {
+            "message": f"Update trade log - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            "content": encoded,
+            "sha": sha
+        }
+
+        requests.put(url, headers=headers, json=payload)
+        print("✅ Trade log pushed to GitHub")
+    except Exception as e:
+        print(f"⚠️ Could not push to GitHub: {e}")
+
 def get_latest_data(ticker=TICKER, days=80):
     df = yf.download(ticker, period=f"{days}d", auto_adjust=True)
     if isinstance(df.columns, pd.MultiIndex):
@@ -47,7 +81,6 @@ def get_latest_data(ticker=TICKER, days=80):
     df['Close']  = df['Close'].astype(float)
     df['Volume'] = df['Volume'].astype(float)
     df = add_indicators(df)
-    # Use synthetic sentiment only — no FinBERT (saves RAM)
     df['sentiment'] = synthetic_sentiment(df).values
     df.dropna(inplace=True)
     return df
@@ -160,7 +193,7 @@ def run():
         print(f"  ⏸  HOLD — no order placed")
 
     save_log(log)
-    print(f"  📝 Log saved")
+    push_log_to_github()
     print(f"{'='*50}")
 
 if __name__ == "__main__":
